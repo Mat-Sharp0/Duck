@@ -1,3 +1,2 @@
-turtles
 pyinstaller
 numpy
