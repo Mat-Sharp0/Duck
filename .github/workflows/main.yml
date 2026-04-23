@@ -1,0 +1,86 @@
+name: Build and Release Executables
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Enter the version (e.g., v1.0.0)"
+        required: true
+      file_path:
+        description: "Enter the file path (e.g., src/main.py)"
+        required: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build executable
+        run: pyinstaller --onefile ${{ github.event.inputs.file_path }}
+
+      - name: Rename executable
+        shell: bash
+        run: |
+          BASENAME=$(basename "${{ github.event.inputs.file_path }}" .py)
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            mv dist/${BASENAME}.exe dist/app-windows.exe
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            mv dist/${BASENAME} dist/app-linux
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            mv dist/${BASENAME} dist/app-macos
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          path: dist/app-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist/
+
+      - name: List downloaded files (Debugging)
+        run: ls -R dist/
+
+      - name: Make files executable (Linux/Mac)
+        run: chmod +x dist/app-linux dist/app-macos || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/app-linux
+            dist/app-windows.exe
+            dist/app-macos
